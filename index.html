@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎤 音声辞書登録ツール - Whisper Dictionary</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 { color: #333; text-align: center; margin-bottom: 10px; }
+        .subtitle { color: #666; text-align: center; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #333; font-weight: 500; }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        input:focus, textarea:focus { outline: none; border-color: #667eea; }
+        .button-group { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex: 1;
+            min-width: 120px;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .data-list { background: #f9f9f9; border-radius: 8px; padding: 20px; max-height: 400px; overflow-y: auto; }
+        .data-item { background: white; padding: 12px; margin-bottom: 10px; border-left: 4px solid #667eea; border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 音声辞書登録ツール</h1>
+        <p class="subtitle">Whisper Dictionary - Web Speech API版</p>
+
+        <div class="form-section">
+            <div class="form-group">
+                <label for="word">単語</label>
+                <input type="text" id="word" placeholder="例：ハーモニカ">
+            </div>
+
+            <div class="form-group">
+                <label for="reading">読み方</label>
+                <input type="text" id="reading" placeholder="例：はーもにか">
+            </div>
+
+            <div class="form-group">
+                <label for="meaning">意味・説明</label>
+                <textarea id="meaning" rows="3" placeholder="例：楽器の一種"></textarea>
+            </div>
+
+            <div class="button-group">
+                <button class="btn-primary" onclick="startVoiceInput()">🎤 音声入力</button>
+                <button class="btn-primary" onclick="addWord()">登録</button>
+                <button class="btn-primary" onclick="downloadCSV()">ダウンロード</button>
+            </div>
+        </div>
+
+        <div>
+            <h3>登録済みデータ（<span id="count">0</span>件）</h3>
+            <div class="data-list" id="dataList">
+                <p style="color: #999;">まだデータがありません</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'whisper_dictionary_data';
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'ja-JP';
+        }
+
+        window.addEventListener('load', () => {
+            loadData();
+            updateDataList();
+        });
+
+        function loadData() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveData(data) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        function addWord() {
+            const word = document.getElementById('word').value.trim();
+            if (!word) return alert('単語を入力してください');
+
+            const data = loadData();
+            data.push({
+                word,
+                reading: document.getElementById('reading').value.trim() || word,
+                meaning: document.getElementById('meaning').value.trim(),
+                timestamp: new Date().toISOString()
+            });
+
+            saveData(data);
+            updateDataList();
+            document.getElementById('word').value = '';
+            document.getElementById('reading').value = '';
+            document.getElementById('meaning').value = '';
+        }
+
+        function updateDataList() {
+            const data = loadData();
+            document.getElementById('count').textContent = data.length;
+            const html = data.length === 0 
+                ? '<p style="color: #999;">まだデータがありません</p>'
+                : data.map(item => `<div class="data-item"><strong>${item.word}</strong> (${item.reading})<br><small>${item.meaning}</small></div>`).join('');
+            document.getElementById('dataList').innerHTML = html;
+        }
+
+        function downloadCSV() {
+            const data = loadData();
+            if (data.length === 0) return alert('ダウンロードするデータがありません');
+
+            let csv = 'word,reading,meaning\n';
+            data.forEach(item => {
+                csv += `"${item.word}","${item.reading}","${item.meaning}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `whisper_dictionary_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        function startVoiceInput() {
+            if (!recognition) return alert('お使いのブラウザは音声入力に対応していません');
+
+            recognition.onresult = function(event) {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                document.getElementById('word').value = transcript;
+            };
+
+            recognition.start();
+        }
+    </script>
+</body>
+</html>
